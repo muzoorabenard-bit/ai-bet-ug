@@ -17,10 +17,25 @@ const client = new Client({ connectionString, ssl: { rejectUnauthorized: false }
 async function main() {
   await client.connect();
 
+  await client.query(`
+    create table if not exists schema_migrations (
+      filename text primary key,
+      applied_at timestamptz not null default now()
+    );
+  `);
+
+  const { rows } = await client.query<{ filename: string }>("select filename from schema_migrations");
+  const applied = new Set(rows.map((r) => r.filename));
+
   for (const file of files) {
+    if (applied.has(file)) {
+      logger.info(`skipping ${file} (already applied)`);
+      continue;
+    }
     const sql = readFileSync(path.join(migrationsDir, file), "utf8");
     logger.info(`applying ${file}`);
     await client.query(sql);
+    await client.query("insert into schema_migrations (filename) values ($1)", [file]);
   }
 
   const seedPath = path.resolve("supabase/seed.sql");
