@@ -34,7 +34,7 @@ npm run resolve-events
 
 Fuzzy-matches each pending bet's team names (`src/betpawa/resolveMatch.ts`) against the relevant BetPawa league page (league→id map in `src/betpawa/leagues.ts`) and fills in `bookmaker_event_url`. Best-effort and conservative — leaves it null and logs a warning rather than guessing wrong; check Supabase Studio for any that need a manual URL pasted in.
 
-Note: as of 2026-08-16 Project Pi's `ANTHROPIC_API_KEY` is out of credits (`recommendations` had been silently stalled since 2026-05-11) — `analyze-matches` won't produce new picks until that's topped up at console.anthropic.com and the secret is refreshed (`supabase secrets set ANTHROPIC_API_KEY=... --project-ref vkaprrhkmbbhagcidaka`).
+Status as of 2026-08-16: verified working end-to-end against real fixtures (`recommendations` had been silently stalled since 2026-05-11 on exhausted Anthropic credits — topped up and fixed, along with three bugs found in the process: extended-thinking mode silently eating the whole `max_tokens` budget on some matches with no text output — fixed by disabling `thinking` and raising `max_tokens` to 2000; one match's failure aborting the whole batch instead of just that match — fixed with per-match error isolation; and a dedup check comparing recommendation-insertion time against the *fixture's* date rather than checking match_id existence outright — fixed, was silently producing duplicate picks whenever analysis ran the night before a fixture's date).
 
 ## Proving the state machine (no real BetPawa involved)
 
