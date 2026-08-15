@@ -4,10 +4,9 @@ import { placeBetFlow } from "./placeBet.js";
 import { captureConfirmation } from "./screenshot.js";
 
 /**
- * Real Playwright-driven BetPawa client. NOT wired into index.ts yet —
- * selectors.ts is still full of TODO placeholders. Do not switch
- * src/betpawa/index.ts to export this until login + a dry-run walkthrough
- * have been verified manually (see README "Selector discovery").
+ * Real Playwright-driven BetPawa client — wired into index.ts as of
+ * 2026-08-16. Login, dry-run, and one real live placement (slip
+ * #12654578206) have all been verified against the live site.
  */
 export const realClient: BetPawaClient = {
   async execute(bet, { dryRun }): Promise<BetPawaExecutionResult> {

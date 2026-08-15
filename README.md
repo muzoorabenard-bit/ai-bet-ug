@@ -54,17 +54,16 @@ You should see a `dry_run_success` row appear in `bet_placements` and the `recom
 
 ## BetPawa automation status
 
-`src/betpawa/selectors.ts` — **login and all four markets' selectors are verified** against the live site (2026-08-16, via the throwaway `src/cli/reconLogin.ts` / `reconBetSlip.ts` scripts — rerun that style of script if selectors start failing, since bookmaker frontends change without notice). `npm run test-login` proves the real login flow end-to-end with `storageState/betpawa.json` reuse.
+`src/betpawa/index.ts` exports `realClient` — **live as of 2026-08-16**. Login, dry-run, and one real placement (Double Chance/X2 on RCD Espanyol de Barcelona v Levante UD, stake UGX 2, slip #12654578206) have all been verified against the live site.
 
 Two site-specific quirks baked into the code: it's a client-rendered SPA (`session.ts`/`placeBet.ts` wait for a fixed delay after navigation rather than `networkidle`, since match pages stream live odds continuously and never go idle), and the mobile-number field wants the **local number without the `256` prefix** (stripped automatically from `BETPAWA_PHONE`).
 
-**What's still unverified**: `SELECTORS.betSlip.confirmationBanner` — no recon run has ever clicked the actual "Place bet" button (deliberately, to avoid staking real money during discovery), so what the post-confirmation success state looks like is a best guess. This only matters for `dry_run=false` live placements; dry-run stops one step before it.
+**Important lesson from that first live bet**: `SELECTORS.betSlip.confirmationBanner` was an unverified guess and turned out wrong — the "Place bet" click succeeded for real (balance dropped by exactly the stake) but the banner selector never matched, so `placeBetFlow` threw and the bet was initially recorded as `failed` even though it had genuinely succeeded. **`placeBet.ts` no longer trusts the banner as the success signal** — it reads the account balance before and after clicking confirm and treats a balance drop matching the stake as the authoritative success signal, regardless of whether any banner text matched. The banner selector is now purely a best-effort bonus for capturing a slip reference; a miss there is harmless and no longer fails the placement. If you ever see a `failed` bet_placements row for a live (non-dry-run) attempt, still double check BetPawa's "My Bets" / balance manually before re-approving — the balance check is much more reliable than a banner guess, but "manually verify before any retry" remains the right instinct any time a live placement errors.
 
-To go live with `realClient`:
+To run a dry-run proof before ever going live again on a new market/selection combo:
 
-1. Switch `src/betpawa/index.ts` to export `realClient` instead of `stubClient`.
-2. Run `npm run resolve-events`, approve a bet with a resolved `bookmaker_event_url`, `npm run run-once` with dry-run still on — this really logs into BetPawa, navigates to the match, reads live odds for the right market/selection, fills the stake, and stops. Check `bet_placements.submitted_odds` looks sane for the market.
-3. Only after several clean dry runs: pick one bet, set `recommended_bets.dry_run = false` on that single row, temporarily set `settings.dry_run_default = false`, turn the kill switch off (`npm run kill-switch -- off`), let one cycle run, then immediately turn the kill switch back on (`npm run kill-switch -- on`) and set `dry_run_default` back to `true`. Watch for a `confirmationBanner`-related failure specifically — if the selector's wrong, `bet_placements` will show `failed` with a clear error rather than silently misreporting success.
+1. Run `npm run resolve-events`, approve a bet with a resolved `bookmaker_event_url`, `npm run run-once` with dry-run still on — this really logs into BetPawa, navigates to the match, reads live odds for the right market/selection, fills the stake, and stops. Check `bet_placements.submitted_odds` looks sane for the market.
+2. Only after a clean dry run: set `recommended_bets.dry_run = false` on that single row, temporarily set `settings.dry_run_default = false`, turn the kill switch off (`npm run kill-switch -- off`), let one cycle run, then immediately turn the kill switch back on (`npm run kill-switch -- on`) and set `dry_run_default` back to `true`. Note: a dry-run placement counts as an "active placement" for the duplicate-guard, so clear that `bet_placements` row (or use a different `recommended_bets` row) before the live attempt on the same bet.
 
 ## Running continuously
 

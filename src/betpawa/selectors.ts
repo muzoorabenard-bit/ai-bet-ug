@@ -26,10 +26,13 @@ export const SELECTORS = {
     // "text=" substring match — unique on the page, no other button's text
     // contains "Place bet" (confirmed via reconBetSlip.ts's button dump).
     confirmButton: "text=Place bet",
-    // ⚠️ UNVERIFIED — nobody has clicked an actual confirm button yet (all
-    // recon stopped short of that deliberately). Best guess pending a real
-    // (small-stake) live placement test.
-    confirmationBanner: "TODO: element/text confirming slip accepted, ideally containing a slip id",
+    // ⚠️ UNVERIFIED best-effort guess — a first live placement (2026-08-16,
+    // slip #12654578206) succeeded for real but this selector never matched
+    // anything, which is exactly why placeBet.ts no longer treats it as the
+    // success/failure signal (see the balance-delta check there instead).
+    // This is now purely a bonus attempt at capturing a slip ref; a miss
+    // here is harmless. Safe regex text match — never throws even if wrong.
+    confirmationBanner: "text=/bet placed|slip|success|confirmed/i",
   },
   // Exact market-card heading text, verified via reconBetSlip.ts against a
   // real match page. Each has near-identical sibling headings on the same

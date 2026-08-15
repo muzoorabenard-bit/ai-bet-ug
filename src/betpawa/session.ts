@@ -34,6 +34,21 @@ export async function closeSession(session: BetPawaSession): Promise<void> {
   await session.browser.close();
 }
 
+/**
+ * Reads the account balance from whatever page is currently loaded (the
+ * "UGX 1,234.56" text near the top nav — appears unmasked on a fresh
+ * page load in every case observed this session, no eye-icon click needed).
+ * Used as the authoritative real-money placement signal: verified 2026-08-16
+ * to match the actual stake deducted exactly, which is more reliable than
+ * any single confirmation-banner selector guess.
+ */
+export async function readBalance(page: Page): Promise<number> {
+  const bodyText = await page.locator("body").innerText();
+  const match = bodyText.match(/UGX\s*([\d,]+\.\d{2})/);
+  if (!match?.[1]) throw new Error("could not read account balance from the page");
+  return Number.parseFloat(match[1].replace(/,/g, ""));
+}
+
 async function isLoggedIn(page: Page): Promise<boolean> {
   try {
     await page.waitForSelector(SELECTORS.login.loggedInMarker, { timeout: 3000 });

@@ -2,6 +2,7 @@ import type { Page } from "playwright";
 import type { RecommendedBet } from "../db/types.js";
 import { SELECTORS } from "./selectors.js";
 import { findMarketCardButtons } from "./marketCard.js";
+import { readBalance } from "./session.js";
 
 export interface PlaceBetFlowResult {
   observedOdds: number;
@@ -88,9 +89,35 @@ export async function placeBetFlow(
     return { observedOdds };
   }
 
+  // Balance delta is the authoritative success/failure signal, not any
+  // single confirmation-banner selector — verified 2026-08-16 to match the
+  // real stake deducted exactly (a banner-only check silently missed a
+  // real, successful placement because the selector guess was wrong: the
+  // click went through, the money moved, and the code still reported
+  // 'failed'). A banner match is still attempted below purely as a
+  // best-effort bonus for the slip reference; it never blocks success.
+  const balanceBefore = await readBalance(page);
   await page.click(SELECTORS.betSlip.confirmButton);
-  const banner = await page.waitForSelector(SELECTORS.betSlip.confirmationBanner, { timeout: 15000 });
-  const slipRef = (await banner.textContent())?.trim();
+  await page.waitForTimeout(3000);
+  const balanceAfter = await readBalance(page);
+
+  const actualDeducted = balanceBefore - balanceAfter;
+  if (Math.abs(actualDeducted - bet.recommended_stake) > 0.01) {
+    throw new Error(
+      `balance did not decrease by the expected stake after clicking confirm — expected -${bet.recommended_stake}, ` +
+        `observed ${(-actualDeducted).toFixed(2)} (balance ${balanceBefore} -> ${balanceAfter}). ` +
+        `Check BetPawa "My Bets" manually before any retry — the click may or may not have gone through.`,
+    );
+  }
+
+  let slipRef: string | undefined;
+  try {
+    const banner = await page.waitForSelector(SELECTORS.betSlip.confirmationBanner, { timeout: 5000 });
+    slipRef = (await banner.textContent())?.trim();
+  } catch {
+    // No banner match — not an error. Success is already confirmed above via
+    // the balance delta; the real slip id is visible in BetPawa's "My Bets".
+  }
 
   return { observedOdds, slipRef };
 }
