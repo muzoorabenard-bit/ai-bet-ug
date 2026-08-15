@@ -20,6 +20,7 @@ export interface Settings {
   dry_run_default: boolean;
   max_stake_per_bet: number;
   max_daily_stake_total: number;
+  current_bankroll: number;
   updated_at: string;
 }
 
@@ -43,12 +44,15 @@ export interface RecommendedBet {
   dry_run: boolean;
   source: string;
   bookmaker_event_url: string | null;
+  pi_match_id: string | null;
 
   status: RecommendedBetStatus;
   status_reason: string | null;
 
   updated_at: string;
 }
+
+export type BetResult = "win" | "loss" | "void";
 
 export interface BetPlacement {
   id: number;
@@ -66,6 +70,10 @@ export interface BetPlacement {
   status: BetPlacementStatus;
   error_message: string | null;
 
+  result: BetResult | null;
+  payout: number | null;
+  settled_at: string | null;
+
   started_at: string;
   completed_at: string | null;
 }
@@ -75,7 +83,14 @@ export interface BankrollLedgerEntry {
   occurred_at: string;
   change_amount: number;
   balance_after: number;
-  reason: "stake_placed" | "settled_win" | "settled_loss" | "deposit" | "withdrawal" | "manual_adjustment";
+  reason:
+    | "stake_placed"
+    | "settled_win"
+    | "settled_loss"
+    | "settled_void"
+    | "deposit"
+    | "withdrawal"
+    | "manual_adjustment";
   bet_placement_id: number | null;
   notes: string | null;
 }
