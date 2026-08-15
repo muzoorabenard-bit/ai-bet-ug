@@ -17,7 +17,9 @@ A soccer value-betting runner for the top 5 European leagues (EPL, La Liga, Seri
 3. Copy `.env.example` to `.env` and fill in:
    - `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` — from **this project's own Supabase project** (not buildableug's). Service-role key only — it bypasses RLS and must never be shipped to a browser/frontend.
    - `BETPAWA_USERNAME` / `BETPAWA_PASSWORD` — your own account. Never commit this file, never paste these into chat.
-4. Apply the schema to your Supabase project: run the SQL in `supabase/migrations/0001_init.sql`, `0002_recommended_bets.sql`, `0003_bet_placements.sql` in order (via the Supabase SQL editor, or `supabase db push` if you have the CLI linked to this project).
+4. Apply the schema to your Supabase project — either:
+   - Paste `supabase/migrations/0001_init.sql`, `0002_recommended_bets.sql`, `0003_bet_placements.sql` into the Supabase SQL Editor in order, or
+   - Run `SUPABASE_DB_URL="postgresql://postgres:<db-password>@db.<project-ref>.supabase.co:5432/postgres" npm run migrate` (the DB password is under Project Settings → Database — this is a one-off env var for this command only, never put it in `.env`, the app itself never needs direct DB access).
 5. Sanity-check RLS: in Supabase Studio, confirm the `settings` table has exactly one row with `kill_switch = true`. Then confirm the anon/public key **cannot** read any of the four tables (RLS is enabled with zero policies granted to anon/authenticated — only the service-role key, used solely by this local runner, can access them).
 
 ## Proving the state machine (no real BetPawa involved yet)
