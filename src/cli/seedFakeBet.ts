@@ -12,6 +12,7 @@ async function main() {
     market: "1X2",
     selection: "Home",
     model_odds: 2.1,
+    model_probability: 1 / 2.1,
     bookmaker_odds: 2.0,
     edge_pct: 5,
     recommended_stake: 2,

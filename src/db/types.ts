@@ -21,6 +21,9 @@ export interface Settings {
   max_stake_per_bet: number;
   max_daily_stake_total: number;
   current_bankroll: number;
+  kelly_fraction_cap: number;
+  min_edge_pct: number;
+  min_viable_stake: number;
   updated_at: string;
 }
 
@@ -36,6 +39,7 @@ export interface RecommendedBet {
   market: string;
   selection: string;
   model_odds: number | null;
+  model_probability: number | null;
   bookmaker_odds: number | null;
   edge_pct: number | null;
 
@@ -73,6 +77,7 @@ export interface BetPlacement {
   result: BetResult | null;
   payout: number | null;
   settled_at: string | null;
+  kelly_fraction_applied: number | null;
 
   started_at: string;
   completed_at: string | null;
