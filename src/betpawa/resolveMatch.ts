@@ -28,7 +28,12 @@ function tokenOverlap(a: string, b: string): number {
   let shared = 0;
   for (const t of tokensA) if (tokensB.has(t)) shared++;
 
-  return shared / Math.max(tokensA.size, tokensB.size);
+  // Divide by the SMALLER token count, not the larger: BetPawa's names are
+  // often an abbreviated form of football-data.org's official long names
+  // (e.g. "Racing Santander" vs "Real Racing Club de Santander") — this
+  // measures "are all of the shorter name's words present in the other"
+  // rather than penalizing the long name for having extra descriptive words.
+  return shared / Math.min(tokensA.size, tokensB.size);
 }
 
 const MATCH_THRESHOLD = 0.5;
