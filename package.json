@@ -1,0 +1,28 @@
+{
+  "name": "ai-bet-ug",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Soccer value-betting runner: polls Supabase for approved recommended bets and places them on BetPawa via Playwright, with dry-run/kill-switch/stake-cap guardrails.",
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "tsx src/index.ts",
+    "run-once": "tsx src/cli/runOnce.ts",
+    "seed-fake-bet": "tsx src/cli/seedFakeBet.ts",
+    "kill-switch": "tsx src/cli/setKillSwitch.ts",
+    "playwright:install": "playwright install chromium"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.4",
+    "dotenv": "^16.4.5",
+    "pino": "^9.4.0",
+    "pino-pretty": "^11.2.2",
+    "playwright": "^1.47.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "tsx": "^4.19.1",
+    "typescript": "^5.6.2"
+  }
+}

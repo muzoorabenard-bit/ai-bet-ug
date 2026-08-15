@@ -1,0 +1,4 @@
+-- The singleton settings row is created by migration 0001_init.sql itself
+-- (insert ... on conflict do nothing), so there's nothing additional to seed.
+-- This file exists only for `supabase db reset` convention, which runs it
+-- automatically after migrations.
