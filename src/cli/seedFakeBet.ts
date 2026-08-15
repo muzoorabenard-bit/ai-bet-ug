@@ -18,6 +18,7 @@ async function main() {
     auto_execute: true,
     dry_run: true,
     source: "stub",
+    bookmaker_event_url: null,
   });
 
   logger.info(

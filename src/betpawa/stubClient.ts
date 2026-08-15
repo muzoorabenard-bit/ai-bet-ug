@@ -16,14 +16,14 @@ export const stubClient: BetPawaClient = {
       return {
         ok: true,
         dryRun: true,
-        submittedOdds: bet.bookmaker_odds,
+        submittedOdds: bet.bookmaker_odds ?? undefined,
       };
     }
 
     return {
       ok: true,
       dryRun: false,
-      submittedOdds: bet.bookmaker_odds,
+      submittedOdds: bet.bookmaker_odds ?? undefined,
       stakePlaced: bet.recommended_stake,
       slipRef: `STUB-${bet.id}-${Date.now()}`,
     };

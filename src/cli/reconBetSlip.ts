@@ -76,6 +76,38 @@ async function main() {
   console.log("=== 1X2 FULL TIME MARKET CARD ===");
   console.log(JSON.stringify(cardInfo, null, 2));
 
+  // Dump every market card's heading text + its selection labels, so
+  // Double Chance / BTTS / Over-Under headings can be confirmed exactly
+  // (rather than guessed) before wiring placeBet.ts's market dispatch.
+  const allMarketCards = await page.evaluate(() => {
+    const headings = Array.from(document.querySelectorAll("*")).filter(
+      (el) => /\|\s*Full Time$/.test(el.textContent?.trim() ?? "") && el.children.length <= 1,
+    );
+    const seen = new Set<string>();
+    const results: { heading: string; buttonCount: number; labels: string[] }[] = [];
+    for (const heading of headings) {
+      const text = heading.textContent!.trim();
+      if (seen.has(text)) continue;
+      let node: Element | null = heading;
+      while (node && node !== document.body) {
+        const buttons = node.querySelectorAll('[data-test-class="events-odds event-odds"]');
+        if (buttons.length > 0 && buttons.length <= 12) {
+          seen.add(text);
+          results.push({
+            heading: text,
+            buttonCount: buttons.length,
+            labels: Array.from(buttons).map((b) => b.querySelector('[class*="_label_"]')?.textContent ?? ""),
+          });
+          break;
+        }
+        node = node.parentElement;
+      }
+    }
+    return results;
+  });
+  console.log("=== ALL MARKET CARDS (heading -> labels) ===");
+  console.log(JSON.stringify(allMarketCards, null, 2));
+
   // Click the "1" (home win) selection to add it to the slip, then inspect
   // the slip panel — WITHOUT clicking any confirm/place button.
   if (cardInfo?.buttons[0]?.dataTestId) {

@@ -35,13 +35,14 @@ export interface RecommendedBet {
   market: string;
   selection: string;
   model_odds: number | null;
-  bookmaker_odds: number;
+  bookmaker_odds: number | null;
   edge_pct: number | null;
 
   recommended_stake: number;
   auto_execute: boolean;
   dry_run: boolean;
   source: string;
+  bookmaker_event_url: string | null;
 
   status: RecommendedBetStatus;
   status_reason: string | null;

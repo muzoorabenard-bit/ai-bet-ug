@@ -1,8 +1,7 @@
-// Verified against the live site 2026-08-15 via src/cli/reconLogin.ts (a
-// throwaway reconnaissance script — see git history / README). The bet-slip
-// selectors are still unverified placeholders — nobody has walked through an
-// actual bet placement yet. Bookmaker frontends change without notice:
-// re-verify with reconLogin.ts-style inspection if login starts failing.
+// Verified against the live site 2026-08-16 via src/cli/reconLogin.ts and
+// src/cli/reconBetSlip.ts (throwaway reconnaissance scripts — see git
+// history). Bookmaker frontends change without notice: re-verify with the
+// same recon-script approach if login or bet placement starts failing.
 
 export const SELECTORS = {
   login: {
@@ -23,10 +22,23 @@ export const SELECTORS = {
     loggedInMarker: 'text=View My Bets',
   },
   betSlip: {
-    // ⚠️ UNVERIFIED — nobody has walked through a real bet placement yet.
-    oddsButtonForSelection: "TODO: likely dynamic, keyed by market+selection text",
-    stakeInput: "TODO",
-    confirmButton: "TODO",
+    stakeInput: 'input[name="stake"]',
+    // "text=" substring match — unique on the page, no other button's text
+    // contains "Place bet" (confirmed via reconBetSlip.ts's button dump).
+    confirmButton: "text=Place bet",
+    // ⚠️ UNVERIFIED — nobody has clicked an actual confirm button yet (all
+    // recon stopped short of that deliberately). Best guess pending a real
+    // (small-stake) live placement test.
     confirmationBanner: "TODO: element/text confirming slip accepted, ideally containing a slip id",
+  },
+  // Exact market-card heading text, verified via reconBetSlip.ts against a
+  // real match page. Each has near-identical sibling headings on the same
+  // page (team-specific or combo-market variants) that an exact string match
+  // correctly excludes — see marketCard.ts.
+  marketHeadings: {
+    "1X2": "1X2 | Full Time",
+    "Double Chance": "Double Chance | Full Time",
+    BTTS: "Both Teams To Score | Full Time",
+    "Over/Under 2.5": "Over/Under | Full Time",
   },
 } as const;

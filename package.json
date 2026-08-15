@@ -13,6 +13,7 @@
     "migrate": "tsx src/cli/migrate.ts",
     "recon-login": "tsx src/cli/reconLogin.ts",
     "test-login": "tsx src/cli/testLogin.ts",
+    "resolve-events": "tsx src/cli/resolveEvents.ts",
     "playwright:install": "playwright install chromium"
   },
   "dependencies": {

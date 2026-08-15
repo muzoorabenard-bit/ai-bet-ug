@@ -14,6 +14,28 @@ export async function getApprovedActionable(): Promise<RecommendedBet[]> {
   return (data ?? []) as RecommendedBet[];
 }
 
+export async function getMissingBookmakerEventUrl(): Promise<RecommendedBet[]> {
+  const { data, error } = await supabase
+    .from("recommended_bets")
+    .select("*")
+    .is("bookmaker_event_url", null)
+    .in("status", ["pending_review", "approved"])
+    .gt("kickoff_at", new Date().toISOString())
+    .order("kickoff_at", { ascending: true });
+
+  if (error) throw new Error(`Failed to fetch recommended_bets missing bookmaker_event_url: ${error.message}`);
+  return (data ?? []) as RecommendedBet[];
+}
+
+export async function setBookmakerEventUrl(id: number, url: string): Promise<void> {
+  const { error } = await supabase
+    .from("recommended_bets")
+    .update({ bookmaker_event_url: url, updated_at: new Date().toISOString() })
+    .eq("id", id);
+
+  if (error) throw new Error(`Failed to set bookmaker_event_url for recommended_bet ${id}: ${error.message}`);
+}
+
 export async function getById(id: number): Promise<RecommendedBet | null> {
   const { data, error } = await supabase.from("recommended_bets").select("*").eq("id", id).maybeSingle();
 
