@@ -18,7 +18,8 @@ export async function openSession(): Promise<BetPawaSession> {
   const context = await browser.newContext(hasSavedState ? { storageState: STORAGE_STATE_PATH } : {});
   const page = await context.newPage();
 
-  await page.goto(env.BETPAWA_BASE_URL);
+  await page.goto(env.BETPAWA_BASE_URL, { waitUntil: "networkidle", timeout: 30000 });
+  await page.waitForTimeout(4000); // client-rendered SPA needs time to hydrate
 
   if (!(await isLoggedIn(page))) {
     await loginFlow(page);
@@ -43,7 +44,13 @@ async function isLoggedIn(page: Page): Promise<boolean> {
 }
 
 async function loginFlow(page: Page): Promise<void> {
-  await page.fill(SELECTORS.login.usernameInput, env.BETPAWA_USERNAME);
+  await page.locator(SELECTORS.login.loginTrigger).first().click();
+  await page.waitForSelector(SELECTORS.login.usernameInput, { timeout: 10000 });
+
+  // The mobile number field takes the LOCAL number without the +256 prefix
+  // (the prefix is a fixed label next to the input, not part of its value).
+  const localPhone = env.BETPAWA_PHONE.replace(/^256/, "");
+  await page.fill(SELECTORS.login.usernameInput, localPhone);
   await page.fill(SELECTORS.login.passwordInput, env.BETPAWA_PASSWORD);
   await page.click(SELECTORS.login.submitButton);
   await page.waitForSelector(SELECTORS.login.loggedInMarker, { timeout: 15000 });

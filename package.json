@@ -11,6 +11,8 @@
     "seed-fake-bet": "tsx src/cli/seedFakeBet.ts",
     "kill-switch": "tsx src/cli/setKillSwitch.ts",
     "migrate": "tsx src/cli/migrate.ts",
+    "recon-login": "tsx src/cli/reconLogin.ts",
+    "test-login": "tsx src/cli/testLogin.ts",
     "playwright:install": "playwright install chromium"
   },
   "dependencies": {

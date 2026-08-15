@@ -5,7 +5,7 @@ const envSchema = z.object({
   SUPABASE_URL: z.string().url(),
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
 
-  BETPAWA_USERNAME: z.string().min(1),
+  BETPAWA_PHONE: z.string().min(1),
   BETPAWA_PASSWORD: z.string().min(1),
   BETPAWA_BASE_URL: z.string().url().default("https://www.betpawa.ug"),
 

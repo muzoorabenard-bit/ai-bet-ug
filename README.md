@@ -16,7 +16,7 @@ A soccer value-betting runner for the top 5 European leagues (EPL, La Liga, Seri
 2. `npx playwright install chromium` (or `npm run playwright:install`)
 3. Copy `.env.example` to `.env` and fill in:
    - `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` — from **this project's own Supabase project** (not buildableug's). Service-role key only — it bypasses RLS and must never be shipped to a browser/frontend.
-   - `BETPAWA_USERNAME` / `BETPAWA_PASSWORD` — your own account. Never commit this file, never paste these into chat.
+   - `BETPAWA_PHONE` / `BETPAWA_PASSWORD` — your own account. Never commit this file, never paste these into chat.
 4. Apply the schema to your Supabase project — either:
    - Paste `supabase/migrations/0001_init.sql`, `0002_recommended_bets.sql`, `0003_bet_placements.sql` into the Supabase SQL Editor in order, or
    - Run `SUPABASE_DB_URL="postgresql://postgres:<db-password>@db.<project-ref>.supabase.co:5432/postgres" npm run migrate` (the DB password is under Project Settings → Database — this is a one-off env var for this command only, never put it in `.env`, the app itself never needs direct DB access).
@@ -38,16 +38,18 @@ npm run run-once          # runs a single poll cycle
 
 You should see a `dry_run_success` row appear in `bet_placements` and the `recommended_bets` row move to `placed`. Try seeding + approving the same bet twice in quick succession and running `run-once` — the second attempt should be blocked by the duplicate-placement guard (backed by a Postgres partial unique index, not just application logic).
 
-## Selector discovery (you drive this — not something the assistant can do)
+## Selector discovery
 
-`src/betpawa/selectors.ts` is full of `TODO` placeholders. Nobody has inspected BetPawa's live DOM in this project. To fill them in:
+`src/betpawa/selectors.ts` — **login is done and verified** (`loginTrigger`, `usernameInput`, `passwordInput`, `submitButton`, `loggedInMarker`); `npm run test-login` proves `session.ts`'s real login flow works end-to-end and that `storageState/betpawa.json` gets reused on a second run (skips re-login). The `betSlip.*` selectors are still `TODO` placeholders — nobody has walked through an actual bet placement yet.
 
-1. Set `HEADLESS=false` in `.env` so a real Chromium window opens.
-2. Either:
-   - Add a temporary `await page.pause()` right after `page.goto()` in `src/betpawa/session.ts` — this opens the Playwright Inspector, where you can click through login/bet-slip manually and use its element picker to get real selectors, or
-   - Run `npx playwright codegen https://www.betpawa.ug` separately, log in and walk through a bet slip manually (stop before confirming a real stake), and copy the generated selectors.
-3. Prefer accessibility-first locators (`getByRole`, `getByLabel`, `getByText`) over auto-generated CSS classes — bookmaker frontends change without notice, and brittle selectors fail silently in ways that are hard to notice.
-4. Fill the real values into `SELECTORS` in `selectors.ts`.
+Two notes specific to this site: it's a client-rendered SPA (the initial `goto()` shows only a splash logo — you must wait for network idle + a few seconds before elements exist), and the mobile-number field wants the **local number without the `256` prefix** (`session.ts` strips it automatically from `BETPAWA_PHONE`).
+
+To fill in the remaining bet-slip selectors:
+
+1. Set `HEADLESS=false` in `.env` (already the default) so a real Chromium window opens.
+2. Use `npm run recon-login` as a template — it's a throwaway script (`src/cli/reconLogin.ts`) that navigates, screenshots, and dumps every `<input>`/`<button>` and their attributes to the console. Extend it (or add a similar script) to click through to an actual match's bet slip and dump elements there instead — that's faster and more reliable than manually clicking with the Playwright Inspector, since you get exact `name`/`id`/`class` attributes read back as text/screenshots rather than having to eyeball them.
+3. Prefer accessibility-first or attribute-based locators (`input[name=...]`, `getByRole`, `getByText`) over auto-generated CSS class names like `_button_1od8m_1` — those are build-hash-derived and will change on the next deploy. Scope selectors to the relevant form/section with `:has()` when a generic tag (e.g. `button[type="submit"]`) appears more than once on the page.
+4. Fill the real values into `SELECTORS.betSlip` in `selectors.ts`.
 5. Switch `src/betpawa/index.ts` to export `realClient` instead of `stubClient`.
 6. Re-run `npm run seed-fake-bet` + approve + `npm run run-once` with dry-run still on — this should now really log into BetPawa, navigate to the match, read the live odds, and stop before confirming. Check the logs and the `bet_placements.submitted_odds` value make sense.
 7. Only after several clean dry runs: pick one bet, set `recommended_bets.dry_run = false` on that single row, temporarily set `settings.dry_run_default = false`, turn the kill switch off (`npm run kill-switch -- off`), let one cycle run, then immediately turn the kill switch back on (`npm run kill-switch -- on`) and set `dry_run_default` back to `true`.

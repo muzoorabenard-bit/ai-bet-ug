@@ -1,18 +1,29 @@
-// ⚠️ UNVERIFIED — every selector below is a placeholder guess. Nobody has
-// inspected BetPawa's real live DOM in this project yet. Confirm each one
-// against the actual site (see README's "Selector discovery" section) before
-// login.ts/placeBet.ts leave stub mode. Prefer accessibility-first locators
-// (getByRole/getByLabel/getByText) over brittle auto-generated CSS classes
-// when you fill these in — bookmaker frontends change without notice.
+// Verified against the live site 2026-08-15 via src/cli/reconLogin.ts (a
+// throwaway reconnaissance script — see git history / README). The bet-slip
+// selectors are still unverified placeholders — nobody has walked through an
+// actual bet placement yet. Bookmaker frontends change without notice:
+// re-verify with reconLogin.ts-style inspection if login starts failing.
 
 export const SELECTORS = {
   login: {
-    usernameInput: 'TODO: e.g. input[name="username"]',
-    passwordInput: "TODO",
-    submitButton: "TODO",
-    loggedInMarker: "TODO: element only present when authenticated, e.g. account balance widget",
+    // Navbar trigger that opens the login form (there are a few "Login"
+    // texts on the page; the navbar one is first in DOM order).
+    loginTrigger: 'text=Login',
+    // Phone number field takes the LOCAL number without the +256 prefix
+    // (the prefix is a fixed label next to the input, not part of its value).
+    usernameInput: 'input[name="username"]',
+    // Password input's id is a React-generated useId (e.g. "«r5»") and is
+    // NOT stable across reloads/builds — use the name attribute instead.
+    passwordInput: 'input[name="password"]',
+    // Scoped to the form containing the password field, since a
+    // button[type="submit"] elsewhere on the page (e.g. "Load Betslip")
+    // would otherwise also match.
+    submitButton: 'form:has(input[name="password"]) button[type="submit"]',
+    // Simple, human-readable marker that only appears once authenticated.
+    loggedInMarker: 'text=View My Bets',
   },
   betSlip: {
+    // ⚠️ UNVERIFIED — nobody has walked through a real bet placement yet.
     oddsButtonForSelection: "TODO: likely dynamic, keyed by market+selection text",
     stakeInput: "TODO",
     confirmButton: "TODO",
