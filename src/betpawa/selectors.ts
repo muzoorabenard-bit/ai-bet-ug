@@ -38,10 +38,13 @@ export const SELECTORS = {
   // real match page. Each has near-identical sibling headings on the same
   // page (team-specific or combo-market variants) that an exact string match
   // correctly excludes — see marketCard.ts.
+  //
+  // "Over/Under 2.5" is deliberately absent — retired from auto-placement as
+  // too risky. Missing here makes placeBetFlow throw "unsupported market"
+  // immediately (a 'failed' placement, never a silent bet).
   marketHeadings: {
     "1X2": "1X2 | Full Time",
     "Double Chance": "Double Chance | Full Time",
     BTTS: "Both Teams To Score | Full Time",
-    "Over/Under 2.5": "Over/Under | Full Time",
   },
 } as const;

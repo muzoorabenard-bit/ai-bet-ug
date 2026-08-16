@@ -15,14 +15,18 @@ export interface PlaceBetFlowResult {
 const ODDS_MOVEMENT_TOLERANCE = 0.1; // abort live placement if odds moved against us by more than this
 
 // Maps recommended_bets.selection to the exact label BetPawa shows on the
-// button, per market. Double Chance/BTTS/Over-Under selections already match
-// BetPawa's own labels 1:1 (chosen that way in analyze-matches's bridge
-// code); only 1X2's Home/Draw/Away needs translating to 1/X/2.
+// button, per market. Double Chance/BTTS selections already match BetPawa's
+// own labels 1:1 (chosen that way in analyze-matches's bridge code); only
+// 1X2's Home/Draw/Away needs translating to 1/X/2.
+//
+// "Over/Under 2.5" is deliberately absent — retired from auto-placement as
+// too risky. A market missing from this map falls through to placeBetFlow's
+// "unsupported market" error (a 'failed' placement, not a silent bet), so
+// this also fails closed if such a row ever somehow reaches this point.
 const SELECTION_LABELS: Record<string, Record<string, string>> = {
   "1X2": { Home: "1", Draw: "X", Away: "2" },
   "Double Chance": { "1X": "1X", X2: "X2", "12": "12" },
   BTTS: { Yes: "Yes", No: "No" },
-  "Over/Under 2.5": { "Over 2.5": "Over 2.5", "Under 2.5": "Under 2.5" },
 };
 
 /**
