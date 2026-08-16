@@ -1,0 +1,52 @@
+name: Poll loop
+
+# Runs one poll cycle (src/cli/runOnce.ts) on a schedule instead of a
+# continuously-running process, so this doesn't depend on any one PC being
+# on. Nothing here is time-critical: real odds are read live from BetPawa
+# at execution time regardless of how long a bet sat "approved" first, so a
+# 30-minute cadence costs nothing in practice. Keep the cadence loose —
+# GitHub's free Actions minutes budget for a private repo is ~2000 min/mo,
+# and this repo should stay private (it automates placing real bets in a
+# way that breaches BetPawa's Terms of Service; see README).
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch: {}
+
+concurrency:
+  group: poll-loop
+  # Never cancel a run in progress — it may be mid-way through placing a
+  # real bet. Runs queue instead of overlapping (realClient.ts assumes one
+  # BetPawa session at a time, same reason pollLoop.ts processes sequentially).
+  cancel-in-progress: false
+
+jobs:
+  run-once:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Cache Playwright browser binaries
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      - run: npx playwright install --with-deps chromium
+
+      - name: Run one poll cycle
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          BETPAWA_PHONE: ${{ secrets.BETPAWA_PHONE }}
+          BETPAWA_PASSWORD: ${{ secrets.BETPAWA_PASSWORD }}
+          HEADLESS: "true"
+        run: npm run run-once

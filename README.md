@@ -85,4 +85,19 @@ To run a dry-run proof before ever going live again on a new market/selection co
 npm start
 ```
 
-Polls every `POLL_INTERVAL_SECONDS` (default 30s). Stop it with Ctrl+C, or leave the kill switch on to make it a no-op without stopping the process. `resolve-events` isn't part of this loop yet — run it manually.
+Polls every `POLL_INTERVAL_SECONDS` (default 30s). Stop it with Ctrl+C, or leave the kill switch on to make it a no-op without stopping the process. `resolve-events` isn't part of this loop yet — run it manually. Useful for local testing, but it only acts while this process is actually running on some machine — see below for running independent of any one PC.
+
+## Running independent of any one PC (GitHub Actions)
+
+`.github/workflows/poll.yml` runs one poll cycle (`npm run run-once` — same code path as `npm start`, just one pass instead of a loop) on a schedule (every 30 minutes by default) instead of a continuously-running process. Nothing in the system is time-critical until a bet is already approved — real odds are read live from BetPawa at execution time regardless of how long a `recommended_bets` row sat `approved` first — so a scheduled cadence loses nothing versus true 30-second polling.
+
+**One-time setup**, since this needs your GitHub account access I don't have in this session:
+
+1. Create a **private** GitHub repo for this project (private matters here — the code and README document real automated bet placement that breaches BetPawa's ToS; keep that out of a public repo even though secrets themselves are equally safe either way).
+2. `git remote add origin <your-repo-url>` and `git push -u origin main`.
+3. In the repo's Settings → Secrets and variables → Actions, add: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `BETPAWA_PHONE`, `BETPAWA_PASSWORD` (same values as your local `.env`).
+4. Confirm it works: Actions tab → "Poll loop" → Run workflow (manual trigger via `workflow_dispatch`, don't wait for the schedule) → check the `run-once` step logs.
+
+**Real tradeoff worth knowing**: `storageState/betpawa.json` (the saved login session) is gitignored on purpose — it's a live session credential, not something to commit. That means every Actions run logs in fresh, from a GitHub-hosted runner's datacenter IP rather than a stable home IP, and never reuses a session. That's a meaningfully different fingerprint than how the one real bet this project has placed so far was tested (this PC, one persistent session). It's a plausible contributor to account-review risk on top of the automation risk already accepted — worth watching "My Bets"/account status a bit more closely once this is live, especially in the first few days.
+
+Also watch Actions usage under repo Settings → Billing if the repo is private (~2000 free minutes/month) — loosen the cron in `poll.yml` (e.g. `*/45 * * * *` or hourly) if it's burning through the budget faster than expected.
