@@ -1,11 +1,27 @@
 import { env } from "../config/env.js";
-import { getSettings } from "../db/settings.repo.js";
+import { getSettings, rolloverWeekIfDue, tripKillSwitchForDrawdown } from "../db/settings.repo.js";
 import { getApprovedActionable } from "../db/recommendedBets.repo.js";
+import { checkWeeklyDrawdown } from "../guardrails/drawdown.js";
 import { processBet } from "./processBet.js";
 import { logger } from "./logger.js";
 
 export async function runOneCycle(): Promise<void> {
-  const settings = await getSettings();
+  let settings = await getSettings();
+  settings = await rolloverWeekIfDue(settings);
+
+  // Runs every cycle, independent of kill_switch/queued work: the bankroll
+  // changes asynchronously via settlement (a separately-scheduled process),
+  // so a breach with nothing queued would otherwise go unnoticed until the
+  // next bet attempt.
+  const drawdown = checkWeeklyDrawdown(settings);
+  if (drawdown.breached && !settings.kill_switch) {
+    logger.warn(
+      { weeklyPnlPct: drawdown.weeklyPnlPct.toFixed(2), limit: settings.weekly_drawdown_limit_pct },
+      "weekly drawdown limit breached — tripping kill switch",
+    );
+    await tripKillSwitchForDrawdown();
+    settings.kill_switch = true;
+  }
 
   if (settings.kill_switch) {
     logger.info("kill switch is on, sleeping");

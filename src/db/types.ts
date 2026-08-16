@@ -24,6 +24,9 @@ export interface Settings {
   kelly_fraction_cap: number;
   min_edge_pct: number;
   min_viable_stake: number;
+  week_start_at: string;
+  week_start_bankroll: number;
+  weekly_drawdown_limit_pct: number;
   updated_at: string;
 }
 
