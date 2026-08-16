@@ -1,4 +1,5 @@
 import type { BetPawaClient, BetPawaExecutionResult } from "./types.js";
+import { AbstainError } from "./types.js";
 import { openSession, closeSession } from "./session.js";
 import { placeBetFlow } from "./placeBet.js";
 import { captureConfirmation } from "./screenshot.js";
@@ -9,31 +10,37 @@ import { captureConfirmation } from "./screenshot.js";
  * #12654578206) have all been verified against the live site.
  */
 export const realClient: BetPawaClient = {
-  async execute(bet, { dryRun }): Promise<BetPawaExecutionResult> {
+  async execute(bet, { dryRun, resolveStake }): Promise<BetPawaExecutionResult> {
     const session = await openSession();
 
     try {
-      const result = await placeBetFlow(session.page, bet, { dryRun });
+      const result = await placeBetFlow(session.page, bet, { dryRun, resolveStake });
 
       if (dryRun) {
-        return { ok: true, dryRun: true, submittedOdds: result.observedOdds };
+        return {
+          ok: true,
+          dryRun: true,
+          submittedOdds: result.observedOdds,
+          stakePlaced: result.stake,
+          kellyFractionApplied: result.kellyFractionApplied,
+        };
       }
 
-      // screenshot needs a placement id, which the caller assigns after this
-      // resolves — captured by processBet.ts calling captureConfirmation
-      // separately isn't possible here, so we screenshot with bet.id instead
-      // as a stand-in identifier for this pre-wiring scaffold.
       const screenshotPath = await captureConfirmation(session.page, bet.id);
 
       return {
         ok: true,
         dryRun: false,
         submittedOdds: result.observedOdds,
-        stakePlaced: bet.recommended_stake,
+        stakePlaced: result.stake,
+        kellyFractionApplied: result.kellyFractionApplied,
         slipRef: result.slipRef,
         screenshotPath,
       };
     } catch (err) {
+      if (err instanceof AbstainError) {
+        return { ok: false, dryRun, errorMessage: err.message, abstained: true };
+      }
       return {
         ok: false,
         dryRun,

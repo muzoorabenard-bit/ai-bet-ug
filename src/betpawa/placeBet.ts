@@ -3,9 +3,12 @@ import type { RecommendedBet } from "../db/types.js";
 import { SELECTORS } from "./selectors.js";
 import { findMarketCardButtons } from "./marketCard.js";
 import { readBalance } from "./session.js";
+import { AbstainError, type ResolveStake } from "./types.js";
 
 export interface PlaceBetFlowResult {
   observedOdds: number;
+  stake: number;
+  kellyFractionApplied?: number;
   slipRef?: string;
 }
 
@@ -24,18 +27,22 @@ const SELECTION_LABELS: Record<string, Record<string, string>> = {
 
 /**
  * Navigates to the given bet's match page, locates the right market card and
- * selection button, verifies the odds on offer, and either:
- * - dryRun=true: stops before any confirm click, returns the observed odds only.
+ * selection button, verifies the odds on offer, resolves the real stake via
+ * the injected callback (Kelly sizing happens in processBet.ts, not here —
+ * see resolveStake's doc comment in betpawa/types.ts), and either:
+ * - dryRun=true: stops before any confirm click, returns the observed odds/stake only.
  * - dryRun=false: clicks through to confirm and returns the slip reference.
  *
- * Throws on any unexpected state (unsupported market, selection not found,
- * odds moved beyond tolerance, confirmation banner missing) — the runner
- * treats any thrown error as a 'failed' placement, never a silent skip.
+ * Throws AbstainError when resolveStake declines (no edge / guardrail
+ * blocked) — the runner treats that as a deliberate skip, not a failure.
+ * Throws a plain Error on any unexpected state (unsupported market,
+ * selection not found, odds moved beyond tolerance, balance didn't move as
+ * expected) — the runner treats that as a 'failed' placement.
  */
 export async function placeBetFlow(
   page: Page,
   bet: RecommendedBet,
-  opts: { dryRun: boolean },
+  opts: { dryRun: boolean; resolveStake: ResolveStake },
 ): Promise<PlaceBetFlowResult> {
   const heading = (SELECTORS.marketHeadings as Record<string, string>)[bet.market];
   if (!heading) {
@@ -81,12 +88,18 @@ export async function placeBetFlow(
     }
   }
 
+  const stakeDecision = await opts.resolveStake(observedOdds);
+  if (stakeDecision.abstain) {
+    throw new AbstainError(stakeDecision.reason);
+  }
+  const { stake, kellyFractionApplied } = stakeDecision;
+
   await page.locator(`[data-test-id="${target.dataTestId}"]`).click();
   await page.waitForSelector(SELECTORS.betSlip.stakeInput, { timeout: 10000 });
-  await page.fill(SELECTORS.betSlip.stakeInput, String(bet.recommended_stake));
+  await page.fill(SELECTORS.betSlip.stakeInput, String(stake));
 
   if (opts.dryRun) {
-    return { observedOdds };
+    return { observedOdds, stake, kellyFractionApplied };
   }
 
   // Balance delta is the authoritative success/failure signal, not any
@@ -102,9 +115,9 @@ export async function placeBetFlow(
   const balanceAfter = await readBalance(page);
 
   const actualDeducted = balanceBefore - balanceAfter;
-  if (Math.abs(actualDeducted - bet.recommended_stake) > 0.01) {
+  if (Math.abs(actualDeducted - stake) > 0.01) {
     throw new Error(
-      `balance did not decrease by the expected stake after clicking confirm — expected -${bet.recommended_stake}, ` +
+      `balance did not decrease by the expected stake after clicking confirm — expected -${stake}, ` +
         `observed ${(-actualDeducted).toFixed(2)} (balance ${balanceBefore} -> ${balanceAfter}). ` +
         `Check BetPawa "My Bets" manually before any retry — the click may or may not have gone through.`,
     );
@@ -119,5 +132,5 @@ export async function placeBetFlow(
     // the balance delta; the real slip id is visible in BetPawa's "My Bets".
   }
 
-  return { observedOdds, slipRef };
+  return { observedOdds, stake, kellyFractionApplied, slipRef };
 }

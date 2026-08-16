@@ -11,10 +11,13 @@ async function main() {
     kickoff_at: kickoff.toISOString(),
     market: "1X2",
     selection: "Home",
-    model_odds: 2.1,
-    model_probability: 1 / 2.1,
-    bookmaker_odds: 2.0,
-    edge_pct: 5,
+    // A real positive edge vs the stub client's fake odds (bookmaker_odds),
+    // so the Kelly stake-sizing path actually produces a stake instead of
+    // abstaining — see src/guardrails/kelly.ts.
+    model_odds: 1 / 0.55,
+    model_probability: 0.55,
+    bookmaker_odds: 2.1,
+    edge_pct: 7.4,
     recommended_stake: 2,
     auto_execute: true,
     dry_run: true,

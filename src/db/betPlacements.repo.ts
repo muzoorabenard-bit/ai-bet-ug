@@ -66,7 +66,13 @@ export async function completePlacement(
   update: Partial<
     Pick<
       BetPlacement,
-      "status" | "submitted_odds" | "stake_placed" | "bookmaker_slip_ref" | "screenshot_path" | "error_message"
+      | "status"
+      | "submitted_odds"
+      | "stake_placed"
+      | "bookmaker_slip_ref"
+      | "screenshot_path"
+      | "error_message"
+      | "kelly_fraction_applied"
     >
   > & { status: BetPlacementStatus },
 ): Promise<void> {

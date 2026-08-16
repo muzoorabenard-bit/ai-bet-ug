@@ -2,29 +2,27 @@ import type { RecommendedBet, Settings } from "../db/types.js";
 import * as recommendedBets from "../db/recommendedBets.repo.js";
 import * as betPlacements from "../db/betPlacements.repo.js";
 import * as bankroll from "../db/bankroll.repo.js";
-import { checkGuardrails } from "../guardrails/checkGuardrails.js";
+import { checkPreflightGuardrails, checkStakeGuardrails } from "../guardrails/checkGuardrails.js";
+import { computeKellyStake } from "../guardrails/kelly.js";
 import { betPawaClient } from "../betpawa/index.js";
+import type { ResolveStake } from "../betpawa/types.js";
 import { logger } from "./logger.js";
 
 export async function processBet(bet: RecommendedBet, settings: Settings): Promise<void> {
   const log = logger.child({ recommendedBetId: bet.id });
 
-  // 1. Guardrails — all checked before claiming the row or touching the browser.
+  // 1. Preflight guardrails — everything checkable before the real stake is
+  // known. Checked before claiming the row or touching the browser.
   const [activePlacementCount, stakePlacedTodayTotal] = await Promise.all([
     betPlacements.countActivePlacements(bet.id),
     betPlacements.sumPlacedStakeToday(),
   ]);
 
-  const guardrailResult = checkGuardrails({
-    bet,
-    settings,
-    activePlacementCount,
-    stakePlacedTodayTotal,
-  });
+  const preflightResult = checkPreflightGuardrails({ bet, settings, activePlacementCount });
 
-  if (!guardrailResult.allowed) {
-    log.warn({ reason: guardrailResult.reason }, "guardrail blocked bet, skipping");
-    await recommendedBets.setStatus(bet.id, "skipped", guardrailResult.reason);
+  if (!preflightResult.allowed) {
+    log.warn({ reason: preflightResult.reason }, "preflight guardrail blocked bet, skipping");
+    await recommendedBets.setStatus(bet.id, "skipped", preflightResult.reason);
     return;
   }
 
@@ -49,10 +47,53 @@ export async function processBet(bet: RecommendedBet, settings: Settings): Promi
 
   log.info({ dryRun, attemptNumber }, "placement started");
 
+  // 3. The real stake is decided here, once the real odds are known (see
+  // resolveStake's doc comment in betpawa/types.ts) — Kelly math + a second
+  // guardrail pass against the actual computed number, never the flat
+  // recommended_stake Project Pi wrote days in advance.
+  const resolveStake: ResolveStake = async (observedOdds) => {
+    if (bet.model_probability === null) {
+      return { abstain: true, reason: "recommended_bets.model_probability is not set — cannot compute a Kelly stake" };
+    }
+
+    const currentBankroll = await bankroll.getCurrentBalance();
+    const kelly = computeKellyStake({
+      modelProbability: bet.model_probability,
+      odds: observedOdds,
+      bankroll: currentBankroll,
+      settings,
+    });
+
+    if (kelly.abstain) {
+      return { abstain: true, reason: kelly.reason };
+    }
+
+    const stakeGuardrailResult = checkStakeGuardrails({
+      stake: kelly.stake,
+      settings,
+      stakePlacedTodayTotal,
+    });
+
+    if (!stakeGuardrailResult.allowed) {
+      return { abstain: true, reason: stakeGuardrailResult.reason };
+    }
+
+    return { abstain: false, stake: kelly.stake, kellyFractionApplied: kelly.appliedFraction };
+  };
+
   try {
-    const result = await betPawaClient.execute(bet, { dryRun });
+    const result = await betPawaClient.execute(bet, { dryRun, resolveStake });
 
     if (!result.ok) {
+      if (result.abstained) {
+        await betPlacements.completePlacement(placement.id, {
+          status: "aborted_guardrail",
+          error_message: result.errorMessage,
+        });
+        await recommendedBets.setStatus(bet.id, "skipped", result.errorMessage);
+        log.info({ reason: result.errorMessage }, "abstained — no edge or a stake guardrail blocked the computed amount");
+        return;
+      }
       throw new Error(result.errorMessage ?? "betPawaClient reported failure with no message");
     }
 
@@ -60,6 +101,7 @@ export async function processBet(bet: RecommendedBet, settings: Settings): Promi
       status: dryRun ? "dry_run_success" : "success",
       submitted_odds: result.submittedOdds,
       stake_placed: result.stakePlaced,
+      kelly_fraction_applied: result.kellyFractionApplied,
       bookmaker_slip_ref: result.slipRef,
       screenshot_path: result.screenshotPath,
     });
@@ -75,7 +117,7 @@ export async function processBet(bet: RecommendedBet, settings: Settings): Promi
       });
     }
 
-    log.info({ dryRun, slipRef: result.slipRef }, "placement completed");
+    log.info({ dryRun, stake: result.stakePlaced, slipRef: result.slipRef }, "placement completed");
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : String(err);
     log.error({ errorMessage }, "placement failed");

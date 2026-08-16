@@ -1,30 +1,38 @@
 import type { BetPawaClient, BetPawaExecutionResult } from "./types.js";
 
 /**
- * Stub implementation used until real login/placement automation (session.ts,
- * login.ts, placeBet.ts) has verified selectors — see README "Selector
- * discovery". Simulates the shape of a real run (a short delay, then a
- * result) without ever launching a browser or touching BetPawa, so the
- * runner's guardrails/state-machine/duplicate-guard can be proven end-to-end
- * first. Swap the export in index.ts for the real client once ready.
+ * Stub implementation used to prove the runner's guardrails/state-machine/
+ * duplicate-guard end-to-end without ever launching a browser or touching
+ * BetPawa. Still exercises the resolveStake callback (with a plausible fake
+ * odds value) so the Kelly/guardrail path gets tested too, not just skipped.
  */
 export const stubClient: BetPawaClient = {
-  async execute(bet, { dryRun }): Promise<BetPawaExecutionResult> {
+  async execute(bet, { dryRun, resolveStake }): Promise<BetPawaExecutionResult> {
     await new Promise((resolve) => setTimeout(resolve, 250));
+
+    const fakeOdds = bet.bookmaker_odds ?? bet.model_odds ?? 2.0;
+    const decision = await resolveStake(fakeOdds);
+
+    if (decision.abstain) {
+      return { ok: false, dryRun, errorMessage: decision.reason, abstained: true };
+    }
 
     if (dryRun) {
       return {
         ok: true,
         dryRun: true,
-        submittedOdds: bet.bookmaker_odds ?? undefined,
+        submittedOdds: fakeOdds,
+        stakePlaced: decision.stake,
+        kellyFractionApplied: decision.kellyFractionApplied,
       };
     }
 
     return {
       ok: true,
       dryRun: false,
-      submittedOdds: bet.bookmaker_odds ?? undefined,
-      stakePlaced: bet.recommended_stake,
+      submittedOdds: fakeOdds,
+      stakePlaced: decision.stake,
+      kellyFractionApplied: decision.kellyFractionApplied,
       slipRef: `STUB-${bet.id}-${Date.now()}`,
     };
   },

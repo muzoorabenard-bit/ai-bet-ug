@@ -1,25 +1,24 @@
 import type { RecommendedBet, Settings } from "../db/types.js";
 
-export interface GuardrailContext {
-  bet: RecommendedBet;
-  settings: Settings;
-  activePlacementCount: number; // existing in_progress/success/dry_run_success rows for this bet
-  stakePlacedTodayTotal: number; // sum of already-succeeded stakes today (excludes this bet)
-  now?: Date;
-  minMinutesBeforeKickoff?: number;
-}
-
 export type GuardrailResult = { allowed: true } | { allowed: false; reason: string };
 
 const DEFAULT_MIN_MINUTES_BEFORE_KICKOFF = 2;
 
+export interface PreflightGuardrailContext {
+  bet: RecommendedBet;
+  settings: Settings;
+  activePlacementCount: number; // existing in_progress/success/dry_run_success rows for this bet
+  now?: Date;
+  minMinutesBeforeKickoff?: number;
+}
+
 /**
- * Pure function — no DB/Playwright access — encoding every safety rule that
- * must pass before a bet is ever handed to the browser automation layer.
- * Keep it this way so it stays independently unit-testable.
+ * Everything checkable BEFORE the real stake is known — runs once, before
+ * the bet is claimed or the browser is ever touched. Pure function, no
+ * DB/Playwright access, independently unit-testable.
  */
-export function checkGuardrails(ctx: GuardrailContext): GuardrailResult {
-  const { bet, settings, activePlacementCount, stakePlacedTodayTotal } = ctx;
+export function checkPreflightGuardrails(ctx: PreflightGuardrailContext): GuardrailResult {
+  const { bet, settings, activePlacementCount } = ctx;
   const now = ctx.now ?? new Date();
   const minMinutes = ctx.minMinutesBeforeKickoff ?? DEFAULT_MIN_MINUTES_BEFORE_KICKOFF;
 
@@ -35,21 +34,6 @@ export function checkGuardrails(ctx: GuardrailContext): GuardrailResult {
     return { allowed: false, reason: "auto_execute is false" };
   }
 
-  if (bet.recommended_stake > settings.max_stake_per_bet) {
-    return {
-      allowed: false,
-      reason: `recommended_stake ${bet.recommended_stake} exceeds max_stake_per_bet ${settings.max_stake_per_bet}`,
-    };
-  }
-
-  const projectedDailyTotal = stakePlacedTodayTotal + bet.recommended_stake;
-  if (projectedDailyTotal > settings.max_daily_stake_total) {
-    return {
-      allowed: false,
-      reason: `projected daily total ${projectedDailyTotal} exceeds max_daily_stake_total ${settings.max_daily_stake_total}`,
-    };
-  }
-
   if (activePlacementCount > 0) {
     return { allowed: false, reason: "an active or successful placement already exists for this bet" };
   }
@@ -60,6 +44,38 @@ export function checkGuardrails(ctx: GuardrailContext): GuardrailResult {
     return {
       allowed: false,
       reason: `kickoff is only ${minutesUntilKickoff.toFixed(1)} minutes away (minimum ${minMinutes})`,
+    };
+  }
+
+  return { allowed: true };
+}
+
+export interface StakeGuardrailContext {
+  stake: number;
+  settings: Settings;
+  stakePlacedTodayTotal: number; // sum of already-succeeded stakes today (excludes this bet)
+}
+
+/**
+ * Re-checked a second time, once the real Kelly-computed stake is known
+ * (the real odds, and therefore the real stake, are only available at
+ * placement time — see src/guardrails/kelly.ts).
+ */
+export function checkStakeGuardrails(ctx: StakeGuardrailContext): GuardrailResult {
+  const { stake, settings, stakePlacedTodayTotal } = ctx;
+
+  if (stake > settings.max_stake_per_bet) {
+    return {
+      allowed: false,
+      reason: `computed stake ${stake} exceeds max_stake_per_bet ${settings.max_stake_per_bet}`,
+    };
+  }
+
+  const projectedDailyTotal = stakePlacedTodayTotal + stake;
+  if (projectedDailyTotal > settings.max_daily_stake_total) {
+    return {
+      allowed: false,
+      reason: `projected daily total ${projectedDailyTotal} exceeds max_daily_stake_total ${settings.max_daily_stake_total}`,
     };
   }
 
