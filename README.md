@@ -101,3 +101,13 @@ Polls every `POLL_INTERVAL_SECONDS` (default 30s). Stop it with Ctrl+C, or leave
 **Real tradeoff worth knowing**: `storageState/betpawa.json` (the saved login session) is gitignored on purpose — it's a live session credential, not something to commit. That means every Actions run logs in fresh, from a GitHub-hosted runner's datacenter IP rather than a stable home IP, and never reuses a session. That's a meaningfully different fingerprint than how the one real bet this project has placed so far was tested (this PC, one persistent session). It's a plausible contributor to account-review risk on top of the automation risk already accepted — worth watching "My Bets"/account status a bit more closely once this is live, especially in the first few days.
 
 Also watch Actions usage under repo Settings → Billing if the repo is private (~2000 free minutes/month) — loosen the cron in `poll.yml` (e.g. `*/45 * * * *` or hourly) if it's burning through the budget faster than expected.
+
+## Notifications (Telegram)
+
+With per-bet human review gone (see "Fully autonomous" above), Telegram is the only thing that tells you something happened without opening Supabase. `src/notify/telegram.ts` is a best-effort side channel — a Telegram failure never breaks placement or settlement, it just logs and moves on. Fires on:
+
+- **Placement** (`processBet.ts`) — a bet places (dry-run or real, clearly labeled) or fails outright (a failed placement needs a human to review and manually re-approve it — with nobody watching Studio by default, this is the only thing that surfaces that).
+- **Weekly drawdown breach** (`pollLoop.ts`) — the kill switch auto-trips; system stays stopped until someone manually turns it back on.
+- **Settlement** (win/loss/void — lives in the separate `project-pi` repo's `settle-results` function, since that's where settlement runs; reuses the same `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID` project-pi's `analyze-matches` already sends "Daily Picks" to, no new secrets needed on that side).
+
+Set `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID` in `.env` locally and as GitHub Actions secrets (same pattern as the other four) to enable placement/failure/drawdown notifications here. Leave both unset to disable — nothing else changes, notifications just silently no-op.

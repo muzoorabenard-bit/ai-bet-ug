@@ -3,6 +3,7 @@ import { getSettings, rolloverWeekIfDue, tripKillSwitchForDrawdown } from "../db
 import { getApprovedActionable } from "../db/recommendedBets.repo.js";
 import { checkWeeklyDrawdown } from "../guardrails/drawdown.js";
 import { processBet } from "./processBet.js";
+import { notifyTelegram } from "../notify/telegram.js";
 import { logger } from "./logger.js";
 
 export async function runOneCycle(): Promise<void> {
@@ -21,6 +22,12 @@ export async function runOneCycle(): Promise<void> {
     );
     await tripKillSwitchForDrawdown();
     settings.kill_switch = true;
+
+    await notifyTelegram(
+      `🛑 WEEKLY DRAWDOWN LIMIT BREACHED — kill switch auto-tripped\n` +
+        `Weekly P&L: ${drawdown.weeklyPnlPct.toFixed(2)}% (limit: -${settings.weekly_drawdown_limit_pct}%)\n` +
+        `Bankroll: ${settings.current_bankroll} UGX\n\nSystem is fully autonomous — it will stay stopped until someone manually turns the kill switch back off.`,
+    );
   }
 
   if (settings.kill_switch) {

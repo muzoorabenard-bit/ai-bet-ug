@@ -14,6 +14,11 @@ const envSchema = z.object({
     .string()
     .default("false")
     .transform((v) => v.toLowerCase() === "true"),
+
+  // Optional: notifications (src/notify/telegram.ts) no-op gracefully if
+  // either is unset, so this deliberately isn't required.
+  TELEGRAM_BOT_TOKEN: z.string().optional(),
+  TELEGRAM_CHAT_ID: z.string().optional(),
 });
 
 // Fail fast: any missing/invalid var throws immediately at import time,

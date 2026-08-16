@@ -6,6 +6,7 @@ import { checkPreflightGuardrails, checkStakeGuardrails } from "../guardrails/ch
 import { computeKellyStake } from "../guardrails/kelly.js";
 import { betPawaClient } from "../betpawa/index.js";
 import type { ResolveStake } from "../betpawa/types.js";
+import { notifyTelegram } from "../notify/telegram.js";
 import { logger } from "./logger.js";
 
 export async function processBet(bet: RecommendedBet, settings: Settings): Promise<void> {
@@ -118,17 +119,31 @@ export async function processBet(bet: RecommendedBet, settings: Settings): Promi
     }
 
     log.info({ dryRun, stake: result.stakePlaced, slipRef: result.slipRef }, "placement completed");
+
+    const label = dryRun ? "🧪 DRY RUN" : "✅ BET PLACED";
+    await notifyTelegram(
+      `${label}\n${bet.league}: ${bet.home_team} vs ${bet.away_team}\n${bet.market} — ${bet.selection}\n` +
+        `Stake: ${result.stakePlaced} UGX @ ${result.submittedOdds}` +
+        (result.slipRef ? `\nSlip: ${result.slipRef}` : ""),
+    );
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : String(err);
     log.error({ errorMessage }, "placement failed");
 
     // No blind retries: a failed placement stays 'failed' until a human
     // reviews it and manually flips the recommended_bet back to 'approved',
-    // which will start a fresh attempt_number next cycle.
+    // which will start a fresh attempt_number next cycle. In fully-autonomous
+    // mode nobody is watching Supabase Studio, so this notification is the
+    // only thing that surfaces "this needs a human" at all.
     await betPlacements.completePlacement(placement.id, {
       status: "failed",
       error_message: errorMessage,
     });
     await recommendedBets.setStatus(bet.id, "failed", errorMessage);
+
+    await notifyTelegram(
+      `⚠️ PLACEMENT FAILED — needs review\n${bet.league}: ${bet.home_team} vs ${bet.away_team}\n` +
+        `${bet.market} — ${bet.selection}\n${errorMessage}`,
+    );
   }
 }
