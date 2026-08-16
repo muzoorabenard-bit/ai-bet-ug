@@ -1,27 +1,33 @@
 name: Poll loop
 
-# Runs one poll cycle (src/cli/runOnce.ts) on a schedule instead of a
-# continuously-running process, so this doesn't depend on any one PC being
-# on. Nothing here is time-critical: real odds are read live from BetPawa
-# at execution time regardless of how long a bet sat "approved" first, so a
-# 30-minute cadence costs nothing in practice. Keep the cadence loose —
-# GitHub's free Actions minutes budget for a private repo is ~2000 min/mo,
-# and this repo should stay private (it automates placing real bets in a
-# way that breaches BetPawa's Terms of Service; see README).
+# Fully-autonomous mode (2026-08-16): no human reviews an individual bet
+# before it places. resolve-events is what auto-approves a bet the moment
+# its BetPawa URL resolves (see src/cli/resolveEvents.ts) — it must run on
+# its own schedule for that to happen at all; run-once then places anything
+# 'approved'. Real odds are read live at execution time regardless of how
+# long a bet sat "approved" first, so run-once's 30-minute cadence costs
+# nothing in practice. Keep cadences loose — GitHub's free Actions minutes
+# budget for a private repo is ~2000 min/mo, and this repo should stay
+# private (it automates placing real bets in a way that breaches BetPawa's
+# Terms of Service; see README).
 on:
   schedule:
-    - cron: "*/30 * * * *"
+    - cron: "*/30 * * * *" # run-once: place anything already approved
+    - cron: "20 5 * * *" # resolve-events: resolve + auto-approve today's fresh picks, 15 min after analyze-matches' 05:05 UTC cron (project-pi)
   workflow_dispatch: {}
 
 concurrency:
   group: poll-loop
   # Never cancel a run in progress — it may be mid-way through placing a
   # real bet. Runs queue instead of overlapping (realClient.ts assumes one
-  # BetPawa session at a time, same reason pollLoop.ts processes sequentially).
+  # BetPawa session at a time, same reason pollLoop.ts processes
+  # sequentially) — true of resolve-events' session too, so both jobs share
+  # this group rather than each having their own.
   cancel-in-progress: false
 
 jobs:
   run-once:
+    if: github.event_name != 'schedule' || github.event.schedule == '*/30 * * * *'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -50,3 +56,34 @@ jobs:
           BETPAWA_PASSWORD: ${{ secrets.BETPAWA_PASSWORD }}
           HEADLESS: "true"
         run: npm run run-once
+
+  resolve-events:
+    if: github.event_name != 'schedule' || github.event.schedule == '20 5 * * *'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Cache Playwright browser binaries
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      - run: npx playwright install --with-deps chromium
+
+      - name: Resolve BetPawa event URLs and auto-approve
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          BETPAWA_PHONE: ${{ secrets.BETPAWA_PHONE }}
+          BETPAWA_PASSWORD: ${{ secrets.BETPAWA_PASSWORD }}
+          HEADLESS: "true"
+        run: npm run resolve-events

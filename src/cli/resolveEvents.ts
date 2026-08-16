@@ -26,6 +26,14 @@ async function main() {
       if (url) {
         await recommendedBets.setBookmakerEventUrl(bet.id, url);
         log.info({ url }, "resolved");
+
+        // Fully-autonomous mode: this is the only remaining approval step.
+        // No-ops if the row wasn't (still) pending_review — e.g. someone
+        // already actioned it manually.
+        if (bet.auto_execute) {
+          const approved = await recommendedBets.autoApprove(bet.id);
+          if (approved) log.info("auto-approved");
+        }
       } else {
         log.warn(
           { league: bet.league, homeTeam: bet.home_team, awayTeam: bet.away_team },

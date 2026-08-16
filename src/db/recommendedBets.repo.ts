@@ -36,6 +36,27 @@ export async function setBookmakerEventUrl(id: number, url: string): Promise<voi
   if (error) throw new Error(`Failed to set bookmaker_event_url for recommended_bet ${id}: ${error.message}`);
 }
 
+/**
+ * Fully-autonomous mode (2026-08-16): the human per-bet approval step is
+ * gone by deliberate choice — this is the only place a bet now transitions
+ * pending_review -> approved. Conditional on status still being
+ * 'pending_review' at the moment of the update, so this is safe to call
+ * repeatedly / concurrently. Everything downstream (Kelly abstain, stake
+ * caps, drawdown breaker, kill switch, duplicate guard) is what's left to
+ * catch a bad pick — there is no longer a human sanity check before this.
+ */
+export async function autoApprove(id: number): Promise<boolean> {
+  const { data, error } = await supabase
+    .from("recommended_bets")
+    .update({ status: "approved", updated_at: new Date().toISOString() })
+    .eq("id", id)
+    .eq("status", "pending_review")
+    .select("id");
+
+  if (error) throw new Error(`Failed to auto-approve recommended_bet ${id}: ${error.message}`);
+  return (data ?? []).length > 0;
+}
+
 export async function getById(id: number): Promise<RecommendedBet | null> {
   const { data, error } = await supabase.from("recommended_bets").select("*").eq("id", id).maybeSingle();
 

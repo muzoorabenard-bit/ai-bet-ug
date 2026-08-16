@@ -5,10 +5,10 @@ A soccer value-betting runner for the top 5 European leagues (EPL, La Liga, Seri
 ## ⚠️ Read this before flipping anything live
 
 - BetPawa has no public betting API. Automated placement means Playwright driving your own logged-in account through their real website. This almost certainly breaches their Terms of Service — risk of account limitation, bet voiding, or forfeiture of funds. That's a risk you accepted going in; this project just tries to make the engineering side of it as safe as possible.
-- **Dry-run is on by default at every layer** (`settings.dry_run_default = true`, and each `recommended_bets` row defaults `dry_run = true`). Nothing places a real stake until you deliberately flip both off for one specific, small, manually-approved bet.
-- **The kill switch defaults to ON.** The runner does nothing until you explicitly turn it off (`npm run kill-switch -- off`).
-- **Nothing is auto-actionable.** Every `recommended_bets` row starts as `pending_review` — a human must manually flip it to `approved` (in Supabase Studio) before the runner will ever touch it, independent of dry-run and the kill switch. This applies equally to rows Project Pi inserts automatically.
-- **No blind retries.** A failed placement stays `failed`. A human must review it and manually re-approve it. This is the guard against a broken selector or a site hiccup silently repeating a stake.
+- **Fully autonomous as of 2026-08-16 — no human reviews an individual bet before it places for real.** Earlier versions of this project required a human to manually flip every `recommended_bets` row to `approved` in Supabase Studio before anything could place, regardless of dry-run/kill-switch state. That gate is gone by deliberate operator choice: `resolve-events` now auto-approves a bet the moment its BetPawa URL resolves (`src/db/recommendedBets.repo.ts`'s `autoApprove`), on its own daily schedule (`.github/workflows/poll.yml`). What's left standing between a Claude pick and real money is purely quantitative: Kelly abstaining with no edge, the stake caps, the weekly drawdown breaker, the kill switch, and the duplicate-placement guard — see "Money management" below. There is no longer a sanity check on whether an individual pick actually makes sense.
+- `settings.dry_run_default` still exists and still governs whether an approved bet places for real or simulates — check it before assuming anything below is live.
+- **The kill switch defaults to ON.** The runner does nothing until you explicitly turn it off (`npm run kill-switch -- off`). With approval now automatic too, this is the fastest way to pause everything.
+- **No blind retries.** A failed placement stays `failed` and is never retried automatically — same reasoning as before (guards against a broken selector or a site hiccup silently repeating a stake), it just now needs a human to notice and manually re-approve it, since nothing else will.
 
 ## Setup
 
@@ -26,13 +26,13 @@ A soccer value-betting runner for the top 5 European leagues (EPL, La Liga, Seri
 
 Project Pi computes a Poisson model + a heuristic "Pressure Model" + situational signals (relegation desperation, draw-trap flags) from football-data.org fixtures/stats, then asks Claude to pick a bet. Its `analyze-matches` function (in the separate `project-pi` repo, not here) writes to its own `recommendations` table **and**, in the same run, bridges into this project's `recommended_bets` — mapping `bet_type`/`pick` onto BetPawa's actual market vocabulary (`1X2`, `Double Chance`, `BTTS`; `draw_no_bet` picks are skipped — no confirmed BetPawa market for it yet; `Over/Under 2.5` was retired from auto-placement 2026-08-16 as too risky — Claude is no longer prompted to suggest it, and the market is absent from both the bridge's mapping function and this repo's own market/selector maps, so a stray pick fails closed instead of placing), persisting `model_probability` and `pi_match_id` (links back to Project Pi's own `matches` row, used by settlement — see below), and leaving `bookmaker_event_url` null (a Deno edge function can't run Playwright). `recommended_stake` (a flat confidence-tier number) is written too but is purely an **advisory display value** for the human approval step — it never governs real money; see "Money management" below for what actually decides the stake.
 
-That URL gets filled in locally:
+That URL gets filled in automatically once a day (05:20 UTC, via `.github/workflows/poll.yml`), or manually any time:
 
 ```sh
 npm run resolve-events
 ```
 
-Fuzzy-matches each pending bet's team names (`src/betpawa/resolveMatch.ts`) against the relevant BetPawa league page (league→id map in `src/betpawa/leagues.ts`) and fills in `bookmaker_event_url`. Best-effort and conservative — leaves it null and logs a warning rather than guessing wrong; check Supabase Studio for any that need a manual URL pasted in.
+Fuzzy-matches each pending bet's team names (`src/betpawa/resolveMatch.ts`) against the relevant BetPawa league page (league→id map in `src/betpawa/leagues.ts`) and fills in `bookmaker_event_url`. Best-effort and conservative — leaves it null and logs a warning rather than guessing wrong; those rows stay `pending_review` (i.e. never auto-approved, never placed) until someone pastes a URL in manually. On a successful resolve, the bet is **auto-approved in the same step** (see the autonomy note above) — there's no separate review between "URL found" and "eligible to place."
 
 Status as of 2026-08-16: verified working end-to-end against real fixtures (`recommendations` had been silently stalled since 2026-05-11 on exhausted Anthropic credits — topped up and fixed, along with three bugs found in the process: extended-thinking mode silently eating the whole `max_tokens` budget on some matches with no text output — fixed by disabling `thinking` and raising `max_tokens` to 2000; one match's failure aborting the whole batch instead of just that match — fixed with per-match error isolation; and a dedup check comparing recommendation-insertion time against the *fixture's* date rather than checking match_id existence outright — fixed, was silently producing duplicate picks whenever analysis ran the night before a fixture's date).
 
@@ -74,10 +74,10 @@ Two site-specific quirks baked into the code: it's a client-rendered SPA (`sessi
 
 **Important lesson from that first live bet**: `SELECTORS.betSlip.confirmationBanner` was an unverified guess and turned out wrong — the "Place bet" click succeeded for real (balance dropped by exactly the stake) but the banner selector never matched, so `placeBetFlow` threw and the bet was initially recorded as `failed` even though it had genuinely succeeded. **`placeBet.ts` no longer trusts the banner as the success signal** — it reads the account balance before and after clicking confirm and treats a balance drop matching the stake as the authoritative success signal, regardless of whether any banner text matched. The banner selector is now purely a best-effort bonus for capturing a slip reference; a miss there is harmless and no longer fails the placement. If you ever see a `failed` bet_placements row for a live (non-dry-run) attempt, still double check BetPawa's "My Bets" / balance manually before re-approving — the balance check is much more reliable than a banner guess, but "manually verify before any retry" remains the right instinct any time a live placement errors.
 
-To run a dry-run proof before ever going live again on a new market/selection combo:
+To run a dry-run proof before trusting a new market/selection combo (or after any code change to the placement path) — since approval is now automatic, the only manual lever left is `dry_run_default` itself:
 
-1. Run `npm run resolve-events`, approve a bet with a resolved `bookmaker_event_url`, `npm run run-once` with dry-run still on — this really logs into BetPawa, navigates to the match, reads live odds for the right market/selection, fills the stake, and stops. Check `bet_placements.submitted_odds` looks sane for the market.
-2. Only after a clean dry run: set `recommended_bets.dry_run = false` on that single row, temporarily set `settings.dry_run_default = false`, turn the kill switch off (`npm run kill-switch -- off`), let one cycle run, then immediately turn the kill switch back on (`npm run kill-switch -- on`) and set `dry_run_default` back to `true`. Note: a dry-run placement counts as an "active placement" for the duplicate-guard, so clear that `bet_placements` row (or use a different `recommended_bets` row) before the live attempt on the same bet.
+1. With `settings.dry_run_default = true`, let `resolve-events` auto-approve a bet normally, then `npm run run-once` — this really logs into BetPawa, navigates to the match, reads live odds for the right market/selection, fills the stake, and stops. Check `bet_placements.submitted_odds` looks sane for the market.
+2. Only after a clean dry run: flip `settings.dry_run_default = false` (globally — there's no longer a manual per-bet review step to scope it to a single row). The very next bet that auto-approves will place for real.
 
 ## Running continuously
 
@@ -85,18 +85,18 @@ To run a dry-run proof before ever going live again on a new market/selection co
 npm start
 ```
 
-Polls every `POLL_INTERVAL_SECONDS` (default 30s). Stop it with Ctrl+C, or leave the kill switch on to make it a no-op without stopping the process. `resolve-events` isn't part of this loop yet — run it manually. Useful for local testing, but it only acts while this process is actually running on some machine — see below for running independent of any one PC.
+Polls every `POLL_INTERVAL_SECONDS` (default 30s). Stop it with Ctrl+C, or leave the kill switch on to make it a no-op without stopping the process. `resolve-events` isn't part of this loop — it runs on its own schedule (see below) since it only needs to happen roughly once a day, not every poll cycle. Useful for local testing, but `npm start` only acts while this process is actually running on some machine — see below for running independent of any one PC.
 
 ## Running independent of any one PC (GitHub Actions)
 
-`.github/workflows/poll.yml` runs one poll cycle (`npm run run-once` — same code path as `npm start`, just one pass instead of a loop) on a schedule (every 30 minutes by default) instead of a continuously-running process. Nothing in the system is time-critical until a bet is already approved — real odds are read live from BetPawa at execution time regardless of how long a `recommended_bets` row sat `approved` first — so a scheduled cadence loses nothing versus true 30-second polling.
+`.github/workflows/poll.yml` has two scheduled jobs: `run-once` (`npm run run-once`, every 30 min — places anything already `approved`) and `resolve-events` (`npm run resolve-events`, daily at 05:20 UTC, 15 min after Project Pi's `analyze-matches` cron — resolves fresh picks' BetPawa URLs and, in fully-autonomous mode, auto-approves them in the same step). Both run on GitHub's infrastructure, not a continuously-running process. Nothing in the system is time-critical until a bet is already approved — real odds are read live from BetPawa at execution time regardless of how long a `recommended_bets` row sat `approved` first — so these scheduled cadences lose nothing versus true continuous polling.
 
 **One-time setup**, since this needs your GitHub account access I don't have in this session:
 
 1. Create a **private** GitHub repo for this project (private matters here — the code and README document real automated bet placement that breaches BetPawa's ToS; keep that out of a public repo even though secrets themselves are equally safe either way).
 2. `git remote add origin <your-repo-url>` and `git push -u origin main`.
 3. In the repo's Settings → Secrets and variables → Actions, add: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `BETPAWA_PHONE`, `BETPAWA_PASSWORD` (same values as your local `.env`).
-4. Confirm it works: Actions tab → "Poll loop" → Run workflow (manual trigger via `workflow_dispatch`, don't wait for the schedule) → check the `run-once` step logs.
+4. Confirm it works: Actions tab → "Poll loop" → Run workflow (manual trigger via `workflow_dispatch` runs both jobs, don't wait for the schedule) → check both the `run-once` and `resolve-events` job logs.
 
 **Real tradeoff worth knowing**: `storageState/betpawa.json` (the saved login session) is gitignored on purpose — it's a live session credential, not something to commit. That means every Actions run logs in fresh, from a GitHub-hosted runner's datacenter IP rather than a stable home IP, and never reuses a session. That's a meaningfully different fingerprint than how the one real bet this project has placed so far was tested (this PC, one persistent session). It's a plausible contributor to account-review risk on top of the automation risk already accepted — worth watching "My Bets"/account status a bit more closely once this is live, especially in the first few days.
 
