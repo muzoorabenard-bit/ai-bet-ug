@@ -43,5 +43,7 @@ export const SELECTORS = {
     "Double Chance": "Double Chance | Full Time",
     BTTS: "Both Teams To Score | Full Time",
     "Over/Under 2.5": "Over/Under | Full Time",
+    // Verified 2026-08-22 via a fresh recon (BetPawa's own market list dump).
+    "Draw No Bet": "Draw No Bet | Full Time",
   },
 } as const;

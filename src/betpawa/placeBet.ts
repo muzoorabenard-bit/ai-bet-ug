@@ -17,12 +17,14 @@ const ODDS_MOVEMENT_TOLERANCE = 0.1; // abort live placement if odds moved again
 // Maps recommended_bets.selection to the exact label BetPawa shows on the
 // button, per market. Double Chance/BTTS/Over-Under selections already match
 // BetPawa's own labels 1:1 (chosen that way in analyze-matches's bridge
-// code); only 1X2's Home/Draw/Away needs translating to 1/X/2.
+// code); 1X2 and Draw No Bet's Home/Away need translating to 1/2 (same
+// numeric convention BetPawa uses for both markets).
 const SELECTION_LABELS: Record<string, Record<string, string>> = {
   "1X2": { Home: "1", Draw: "X", Away: "2" },
   "Double Chance": { "1X": "1X", X2: "X2", "12": "12" },
   BTTS: { Yes: "Yes", No: "No" },
   "Over/Under 2.5": { "Over 2.5": "Over 2.5", "Under 2.5": "Under 2.5" },
+  "Draw No Bet": { Home: "1", Away: "2" },
 };
 
 /**
