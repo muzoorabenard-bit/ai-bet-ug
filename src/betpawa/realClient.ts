@@ -1,6 +1,6 @@
 import type { BetPawaClient, BetPawaExecutionResult } from "./types.js";
-import { AbstainError } from "./types.js";
-import { openSession, closeSession } from "./session.js";
+import { AbstainError, PreSubmitError } from "./types.js";
+import { openSession, closeSession, type BetPawaSession } from "./session.js";
 import { placeBetFlow } from "./placeBet.js";
 import { captureConfirmation } from "./screenshot.js";
 
@@ -11,9 +11,23 @@ import { captureConfirmation } from "./screenshot.js";
  */
 export const realClient: BetPawaClient = {
   async execute(bet, { dryRun, resolveStake }): Promise<BetPawaExecutionResult> {
-    const session = await openSession();
+    // openSession() itself is inside the try now (2026-08-22 fix) — it used
+    // to be outside, so a login/homepage-load failure (seen live: BetPawa's
+    // page rendering degraded, stuck on loading skeletons) propagated as an
+    // uncaught, unclassified error instead of the retryable PreSubmitError
+    // it actually is — nothing was ever submitted at that point.
+    let session: BetPawaSession | undefined;
 
     try {
+      try {
+        session = await openSession();
+      } catch (err) {
+        // Nothing was ever submitted if we can't even log in — always safe
+        // to retry, regardless of the underlying error's own type.
+        throw new PreSubmitError(
+          `failed to open BetPawa session: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
       const result = await placeBetFlow(session.page, bet, { dryRun, resolveStake });
 
       if (dryRun) {
@@ -41,13 +55,16 @@ export const realClient: BetPawaClient = {
       if (err instanceof AbstainError) {
         return { ok: false, dryRun, errorMessage: err.message, abstained: true };
       }
+      if (err instanceof PreSubmitError) {
+        return { ok: false, dryRun, errorMessage: err.message, preSubmitFailure: true };
+      }
       return {
         ok: false,
         dryRun,
         errorMessage: err instanceof Error ? err.message : String(err),
       };
     } finally {
-      await closeSession(session);
+      if (session) await closeSession(session);
     }
   },
 };

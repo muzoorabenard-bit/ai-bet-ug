@@ -9,6 +9,14 @@ import type { ResolveStake } from "../betpawa/types.js";
 import { notifyTelegram } from "../notify/telegram.js";
 import { logger } from "./logger.js";
 
+// A pre-submission failure retries automatically (nothing was ever
+// submitted, so no duplicate-bet risk) — but not forever. Kickoff-timing
+// guardrails naturally cut this off as the match approaches regardless;
+// this cap exists purely for the case of a persistently broken
+// match/selector, so it eventually surfaces as a real 'failed' alert
+// instead of quietly retrying every cycle for days.
+const MAX_PRESUBMIT_ATTEMPTS = 10;
+
 export async function processBet(bet: RecommendedBet, settings: Settings): Promise<void> {
   const log = logger.child({ recommendedBetId: bet.id });
 
@@ -95,6 +103,43 @@ export async function processBet(bet: RecommendedBet, settings: Settings): Promi
         log.info({ reason: result.errorMessage }, "abstained — no edge or a stake guardrail blocked the computed amount");
         return;
       }
+
+      if (result.preSubmitFailure) {
+        await betPlacements.completePlacement(placement.id, {
+          status: "failed",
+          error_message: result.errorMessage,
+        });
+
+        if (attemptNumber < MAX_PRESUBMIT_ATTEMPTS) {
+          // Nothing was submitted — safe to retry. Revert the claim so the
+          // next poll cycle's getApprovedActionable() picks this row back
+          // up (still gated by kickoff-timing/duplicate guardrails as usual).
+          await recommendedBets.setStatus(
+            bet.id,
+            "approved",
+            `attempt ${attemptNumber} failed before submission, will retry: ${result.errorMessage}`,
+          );
+          log.warn({ attemptNumber, reason: result.errorMessage }, "pre-submission failure, will retry next cycle");
+          if (attemptNumber === 1) {
+            await notifyTelegram(
+              `🔄 Placement attempt failed before submitting (will retry automatically)\n` +
+                `${bet.league}: ${bet.home_team} vs ${bet.away_team}\n${bet.market} — ${bet.selection}\n${result.errorMessage}`,
+            );
+          }
+        } else {
+          await recommendedBets.setStatus(
+            bet.id,
+            "failed",
+            `gave up after ${attemptNumber} pre-submission attempts: ${result.errorMessage}`,
+          );
+          await notifyTelegram(
+            `⚠️ PLACEMENT FAILED after ${attemptNumber} attempts — needs review\n` +
+              `${bet.league}: ${bet.home_team} vs ${bet.away_team}\n${bet.market} — ${bet.selection}\n${result.errorMessage}`,
+          );
+        }
+        return;
+      }
+
       throw new Error(result.errorMessage ?? "betPawaClient reported failure with no message");
     }
 
@@ -130,11 +175,14 @@ export async function processBet(bet: RecommendedBet, settings: Settings): Promi
     const errorMessage = err instanceof Error ? err.message : String(err);
     log.error({ errorMessage }, "placement failed");
 
-    // No blind retries: a failed placement stays 'failed' until a human
-    // reviews it and manually flips the recommended_bet back to 'approved',
-    // which will start a fresh attempt_number next cycle. In fully-autonomous
-    // mode nobody is watching Supabase Studio, so this notification is the
-    // only thing that surfaces "this needs a human" at all.
+    // Reached only for failures NOT already handled above as retryable
+    // (preSubmitFailure) or as a deliberate abstain: either a genuinely
+    // ambiguous post-confirm-click failure (we don't know if the bet went
+    // through — see the balance-delta comment in placeBet.ts, a blind retry
+    // here risks placing it twice) or a deterministic structural error
+    // (unsupported market/selection) that retrying could never fix. Both
+    // stay 'failed' with no automatic retry — this notification is the only
+    // thing that surfaces "this needs a human" in fully-autonomous mode.
     await betPlacements.completePlacement(placement.id, {
       status: "failed",
       error_message: errorMessage,

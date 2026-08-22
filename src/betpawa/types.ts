@@ -13,6 +13,10 @@ export interface BetPawaExecutionResult {
    * guardrail blocked the computed amount) rather than failed — the runner
    * treats this as 'skipped', not 'failed'. */
   abstained?: boolean;
+  /** True when the failure happened before anything was submitted (see
+   * PreSubmitError below) — the runner treats this as safe to automatically
+   * retry, rather than a terminal 'failed' needing a human to revive it. */
+  preSubmitFailure?: boolean;
 }
 
 export type ResolveStakeResult =
@@ -32,6 +36,27 @@ export class AbstainError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "AbstainError";
+  }
+}
+
+/**
+ * Thrown for a failure that happens strictly BEFORE the confirm button is
+ * ever clicked — page navigation, market card lookup, odds reading. Nothing
+ * has been submitted, so no risk of a duplicate real bet: the runner treats
+ * this as safe to automatically retry on the next cycle (up to a cap),
+ * instead of dying permanently in a 'failed' state that (in fully-autonomous
+ * mode, with no human reviewing individual bets) nobody would ever revive.
+ *
+ * Deliberately NOT used for structural errors (unsupported market,
+ * unrecognized selection) — those are deterministic and retrying achieves
+ * nothing; nor for anything from the confirm click onward, where we
+ * genuinely don't know if the bet went through (see the balance-delta
+ * comment in placeBet.ts) and a blind retry risks placing it twice.
+ */
+export class PreSubmitError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "PreSubmitError";
   }
 }
 

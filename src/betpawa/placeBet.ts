@@ -3,7 +3,7 @@ import type { RecommendedBet } from "../db/types.js";
 import { SELECTORS } from "./selectors.js";
 import { findMarketCardButtons } from "./marketCard.js";
 import { readBalance } from "./session.js";
-import { AbstainError, type ResolveStake } from "./types.js";
+import { AbstainError, PreSubmitError, type ResolveStake } from "./types.js";
 
 export interface PlaceBetFlowResult {
   observedOdds: number;
@@ -59,21 +59,28 @@ export async function placeBetFlow(
 
   // Match pages stream live odds continuously (websocket/polling), so
   // "networkidle" never fires here — domcontentloaded + a fixed wait instead.
-  await page.goto(bet.bookmaker_event_url, { waitUntil: "domcontentloaded", timeout: 30000 });
-  await page.waitForTimeout(4000);
+  // Wrapped: a slow/degraded BetPawa page load (seen live 2026-08-22 — page
+  // shell rendered but real content stayed on loading skeletons indefinitely)
+  // is exactly the transient case PreSubmitError exists for.
+  try {
+    await page.goto(bet.bookmaker_event_url, { waitUntil: "domcontentloaded", timeout: 30000 });
+    await page.waitForTimeout(4000);
+  } catch (err) {
+    throw new PreSubmitError(`failed to load match page: ${err instanceof Error ? err.message : String(err)}`);
+  }
 
   const buttons = await findMarketCardButtons(page, heading);
   if (!buttons) {
-    throw new Error(`could not locate the "${heading}" market card on the match page`);
+    throw new PreSubmitError(`could not locate the "${heading}" market card on the match page`);
   }
   const target = buttons.find((b) => b.label === wantedLabel);
   if (!target) {
-    throw new Error(`could not find selection '${wantedLabel}' within the "${heading}" market card`);
+    throw new PreSubmitError(`could not find selection '${wantedLabel}' within the "${heading}" market card`);
   }
 
   const observedOdds = Number.parseFloat(target.odds);
   if (Number.isNaN(observedOdds)) {
-    throw new Error(`could not parse odds "${target.odds}"`);
+    throw new PreSubmitError(`could not parse odds "${target.odds}"`);
   }
 
   // bookmaker_odds is null for picks sourced from Project Pi (no real odds
@@ -82,7 +89,7 @@ export async function placeBetFlow(
   if (bet.bookmaker_odds !== null) {
     const movement = Math.abs(observedOdds - bet.bookmaker_odds);
     if (movement > ODDS_MOVEMENT_TOLERANCE) {
-      throw new Error(
+      throw new PreSubmitError(
         `odds moved beyond tolerance: expected ~${bet.bookmaker_odds}, observed ${observedOdds}`,
       );
     }
